@@ -36,7 +36,7 @@ class BillingService(
             }
             return "Invoice charge is in progress"
         } else {
-            logger.debug("Invoice with %d is not pending. Invoice's status is %s", invoice.id, invoice.status)
+            logger.debug("Invoice with {} is not pending. Invoice's status is {}", invoice.id, invoice.status)
             throw InvoiceChargeException("Invalid request. Only invoice with status PENDING can be charged")
         }
     }
