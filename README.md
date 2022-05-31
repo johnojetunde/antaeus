@@ -92,25 +92,26 @@ Happy hacking 😁!
 
 ### Rest Endpoint
 * An endpoint was added to allow the manual triggering of invoice charge. .../invoices/:id/charge
-* Also, the fetch all invoice endpoint was modified to allow the filtering of the invoice by status
+* Also, the fetch all invoice endpoint was modified to allow the filtering of the invoices by status
 
 ### Billing Service
 * public chargeInvoice -> This method takes in invoice id
-  * fetch invoice by id, if not found, a not found exception is cascaded from the invoiceService
+  * fetch invoice by id, if not found, a NotFoundException is cascaded from the invoiceService
   * check the status of the invoice to ensure that it's still pending, 
-    * if it is not pending, then fail the request by throwing InvoiceChargeException because we want to avoid duplicate charge
-    * if it is pending, call the private charge invoice method asynchronously and return a message; This is because the process of charging may take time. So, it's like a fire and forget approach
+    * if status not pending, then fail the request by throwing InvoiceChargeException because we want to avoid duplicate charge
+    * if status is pending, call the private charge invoice method asynchronously and return a message; This is because the process of charging may take time. So, it's like a fire and forget approach
     
-* chargePendingInvoices -> Fetches all the pending invoices in  the store and sends them to chargeInvoice to charge. This method leveraged on parallelStream to send them in parallel
+* chargePendingInvoices -> Fetches all the pending invoices in the store and sends them to chargeInvoice to charge. This method leveraged on parallelStream to send them in parallel
 * private chargeInvoice -> This method tries to charge a pending invoice
     * if invoice charge is successful then update the invoice status to paid
-    * if there is a CustomerNotFoundException or CurrencyMismatchException, log it and maybe send it to datadog for properly alert. This 2 exceptions were handled separately should the business wants to have a custom action per exception type
-    * if a network error occurs from the payment provider, retry for a specified number of times (the time can be configured as an Environmental variable [MAX_RETRY_TIMES]); This is because NetworkException may be temporal. If the max retries is reached and payment provider still failed with NetworkException, we can send some metrics to datadog to capture the failure rate of the payment provider due to this error. This will help in ensuring that we have enough visibility to either change the provider based on SLA breached or probe further
-    * if the charge is not successful (i.e due to balance or something), maybe an email could be sent to the customer to fund their account
+    * if there is a CustomerNotFoundException or CurrencyMismatchException, log it and maybe send it to datadog for proper alert. This 2 exceptions were handled separately in case business wants to have a custom action per exception type
+    * if a network error occurs from the payment provider, retry for a specified number of times (the max number of times can be configured via an Environmental variable [MAX_RETRY_TIMES]); This is because NetworkException may be temporal. 
+      * If the request has been retried max retry times as configured[MAX_RETRY_TIME], and the payment provider still failed with NetworkException, we can send some metrics to datadog to capture the failure rate of the payment provider due to this error. This will help in ensuring that we have enough visibility to either change the provider based on SLA breached or probe further
+    * if the charge is not successful (i.e due to balance), maybe an email could be sent to the customer to fund their account
 
 *Other Suggestions: 
 * When processing the invoices, we can leverage on queueing system to help scale the number of invoices that can be processed at once. Also, to ensure that we cater for system failures. 
-* Also, we can load the pending invoices in batches. If we have lots of invoices, it would be too much for us to load them at once before processing.
+* We can also load the pending invoices in batches. If we have lots of invoices, it would be too much for us to load all of them at once before processing.
 
 ### Billing Job/Cron
 * The Scheduler is the entry point of the cron. The cron is configurable via an environmental variable [INVOICE_BILLING_CRON]

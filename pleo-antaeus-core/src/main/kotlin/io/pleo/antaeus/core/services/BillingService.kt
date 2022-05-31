@@ -9,7 +9,6 @@ import io.pleo.antaeus.models.Invoice
 import io.pleo.antaeus.models.InvoiceStatus
 import mu.KotlinLogging
 import java.lang.Thread.sleep
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 
@@ -69,6 +68,7 @@ class BillingService(
                 sleep(5000) // to retry in 5 seconds
                 return chargeInvoice(invoice, tries - 1)
             }
+            //record metrics in datadog
             logger.error(String.format("Invoice charge fails due to network exceptions. Charging tried %d times.", maxInvoiceRetryTimes), e)
         } catch (e: Exception) {
             logger.error(String.format("Unknown error occurred while charging invoice %d: ", invoice.id), e)
