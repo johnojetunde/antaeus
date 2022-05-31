@@ -5,40 +5,50 @@
 package io.pleo.antaeus.rest
 
 import io.javalin.Javalin
-import io.javalin.apibuilder.ApiBuilder.get
-import io.javalin.apibuilder.ApiBuilder.path
+import io.javalin.apibuilder.ApiBuilder.*
 import io.pleo.antaeus.core.exceptions.EntityNotFoundException
+import io.pleo.antaeus.core.exceptions.InvoiceChargeException
+import io.pleo.antaeus.core.services.BillingService
 import io.pleo.antaeus.core.services.CustomerService
 import io.pleo.antaeus.core.services.InvoiceService
+import io.pleo.antaeus.models.InvoiceStatus
 import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
-private val thisFile: () -> Unit = {}
 
 class AntaeusRest(
-    private val invoiceService: InvoiceService,
-    private val customerService: CustomerService
+        private val invoiceService: InvoiceService,
+        private val customerService: CustomerService,
+        private val billingService: BillingService
 ) : Runnable {
 
     override fun run() {
-        app.start(7000)
+        app.start(8000)
     }
 
     // Set up Javalin rest app
     private val app = Javalin
-        .create()
-        .apply {
-            // InvoiceNotFoundException: return 404 HTTP status code
-            exception(EntityNotFoundException::class.java) { _, ctx ->
-                ctx.status(404)
+            .create()
+            .apply {
+                // InvoiceNotFoundException: return 404 HTTP status code
+                exception(EntityNotFoundException::class.java) { _, ctx ->
+                    ctx.status(404)
+                }
+                exception(IllegalArgumentException::class.java) { ex, ctx ->
+                    logger.error("Invalid request", ex)
+                    ctx.status(400).json("Invalid request")
+                }
+                exception(InvoiceChargeException::class.java) { ex, ctx ->
+                    logger.error("Unable to manually charge invoice due to client error", ex)
+                    ctx.status(400).json(ex.message.toString())
+                }
+                // Unexpected exception: return HTTP 500
+                exception(Exception::class.java) { e, _ ->
+                    logger.error(e) { "Internal server error" }
+                }
+                // On 404: return message
+                error(404) { ctx -> ctx.json("not found") }
             }
-            // Unexpected exception: return HTTP 500
-            exception(Exception::class.java) { e, _ ->
-                logger.error(e) { "Internal server error" }
-            }
-            // On 404: return message
-            error(404) { ctx -> ctx.json("not found") }
-        }
 
     init {
         // Set up URL endpoints for the rest app
@@ -58,12 +68,26 @@ class AntaeusRest(
                     path("invoices") {
                         // URL: /rest/v1/invoices
                         get {
-                            it.json(invoiceService.fetchAll())
+                            val statusString = it.queryParam("status")
+
+                            if (statusString != null && statusString.isNotBlank()) {
+                                val trimmedStatus = statusString.trim().toUpperCase()
+                                val status = InvoiceStatus.valueOf(trimmedStatus)
+                                it.json(invoiceService.fetchByStatus(status))
+                            } else {
+                                it.json(invoiceService.fetchAll())
+                            }
                         }
 
                         // URL: /rest/v1/invoices/{:id}
                         get(":id") {
                             it.json(invoiceService.fetch(it.pathParam("id").toInt()))
+                        }
+
+                        // URL: /rest/v1/invoices/{:id}/charge
+                        post(":id/charge") {
+                            it.json(billingService.chargeInvoice(it.pathParam("id").toInt()))
+                            it.status(202)
                         }
                     }
 

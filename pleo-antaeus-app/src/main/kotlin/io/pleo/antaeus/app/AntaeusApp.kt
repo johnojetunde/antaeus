@@ -32,20 +32,20 @@ fun main() {
     val dbFile: File = File.createTempFile("antaeus-db", ".sqlite")
     // Connect to the database and create the needed tables. Drop any existing data.
     val db = Database
-        .connect(url = "jdbc:sqlite:${dbFile.absolutePath}",
-            driver = "org.sqlite.JDBC",
-            user = "root",
-            password = "")
-        .also {
-            TransactionManager.manager.defaultIsolationLevel = Connection.TRANSACTION_SERIALIZABLE
-            transaction(it) {
-                addLogger(StdOutSqlLogger)
-                // Drop all existing tables to ensure a clean slate on each run
-                SchemaUtils.drop(*tables)
-                // Create all tables
-                SchemaUtils.create(*tables)
+            .connect(url = "jdbc:sqlite:${dbFile.absolutePath}",
+                    driver = "org.sqlite.JDBC",
+                    user = "root",
+                    password = "")
+            .also {
+                TransactionManager.manager.defaultIsolationLevel = Connection.TRANSACTION_SERIALIZABLE
+                transaction(it) {
+                    addLogger(StdOutSqlLogger)
+                    // Drop all existing tables to ensure a clean slate on each run
+                    SchemaUtils.drop(*tables)
+                    // Create all tables
+                    SchemaUtils.create(*tables)
+                }
             }
-        }
 
     // Set up data access layer.
     val dal = AntaeusDal(db = db)
@@ -60,12 +60,25 @@ fun main() {
     val invoiceService = InvoiceService(dal = dal)
     val customerService = CustomerService(dal = dal)
 
+
+    val invoiceBillingCronExpression: String = System.getenv("INVOICE_BILLING_CRON") ?: "0 0 9 1 1/1 ? *"
+    val maxInvoiceRetryTimes: String = System.getenv("MAX_RETRY_TIMES") ?: "2"
+
+
     // This is _your_ billing service to be included where you see fit
-    val billingService = BillingService(paymentProvider = paymentProvider)
+    val billingService = BillingService(
+            paymentProvider = paymentProvider,
+            invoiceService = invoiceService,
+            maxInvoiceRetryTimes = maxInvoiceRetryTimes.toInt()
+    )
+
+    // scheduling billing periodically
+    Scheduler().scheduleBilling(billingService, invoiceBillingCronExpression)
 
     // Create REST web service
     AntaeusRest(
-        invoiceService = invoiceService,
-        customerService = customerService
+            invoiceService = invoiceService,
+            customerService = customerService,
+            billingService = billingService
     ).run()
 }
